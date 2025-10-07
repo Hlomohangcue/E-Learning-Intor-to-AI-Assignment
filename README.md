@@ -1,14 +1,53 @@
-# EasyLearn - Mini E-Learning Platform
+# EasyLearn - Full-Stack E-Learning Platform
 
-A comprehensive mini e-learning platform built with HTML, CSS, and JavaScript featuring user authentication and interactive course content.
+A comprehensive full-stack e-learning platform with Node.js/Express backend, MySQL database, and modern frontend featuring complete user authentication, course management, and progress tracking.
 
-## Features
+## 🏁 Quick Start
+
+1. **Clone and setup:**
+   ```bash
+   git clone https://github.com/Hlomohangcue/E-Learning-Intor-to-AI-Assignment.git
+   cd E-Learning-Intor-to-AI-Assignment
+   npm install
+   ```
+
+2. **Database setup:**
+   ```bash
+   # Copy environment template
+   cp .env.example .env
+   # Edit .env with your MySQL credentials
+   # Run: mysql -u root -p e_learning < database_schema.sql
+   ```
+
+3. **Run the application:**
+   ```bash
+   # Start backend server
+   node server.js
+   
+   # Start frontend (in another terminal)
+   python -m http.server 8000
+   ```
+
+4. **Access:** http://localhost:8000
+
+## 🚀 Features
+
+### ✅ Full-Stack Implementation
+- **Backend API**: Complete Node.js/Express server with RESTful APIs
+- **Database Integration**: MySQL database with comprehensive schema
+- **Authentication**: JWT-based authentication with bcrypt password hashing
+- **Course Management**: Dynamic course loading from database
+- **Progress Tracking**: Real-time course completion tracking
+- **Quiz System**: Interactive quizzes with scoring and database storage
+- **Survey System**: User feedback collection with database persistence
+- **Security**: Input validation, rate limiting, CORS protection
 
 ### ✅ Core Requirements Met
-- **Course List**: Display of 5 different courses with details
+- **Course List**: Display of 5 different courses with details from database
 - **Course Details**: Detailed view with lessons and course information
-- **Course Completion**: Mark courses as completed with persistent storage
+- **Course Completion**: Mark courses as completed with database persistence
 - **Clean UI**: Modern, responsive design with hover effects
+- **User Authentication**: Secure login/register system with JWT tokens
 
 ### 🚀 Enhanced Features Added
 - **User Authentication**: Login and registration system
