@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyLearn - Mini E-Learning Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="api-service.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <h1>🎓 EasyLearn</h1>
+                <button class="mobile-menu-toggle" id="mobile-menu-toggle" onclick="toggleMobileMenu()" aria-label="Toggle navigation menu">
+                    <span class="hamburger-line"></span>
+                    <span class="hamburger-line"></span>
+                    <span class="hamburger-line"></span>
+                </button>
+            </div>
+            
+            <nav class="main-nav" id="main-nav">
+                <ul class="nav-list">
+                    <li><a href="#home" class="nav-link active" onclick="closeMobileMenu()">Home</a></li>
+                    <li><a href="#courses" class="nav-link" onclick="closeMobileMenu()">Courses</a></li>
+                    <li><a href="#profile" class="nav-link" onclick="closeMobileMenu()">Profile</a></li>
+                </ul>
+                <div class="auth-section">
+                    <div class="auth-buttons" id="auth-buttons">
+                        <button class="btn btn-secondary" onclick="showLoginModal(); closeMobileMenu()">Login</button>
+                        <button class="btn btn-primary" onclick="showRegisterModal(); closeMobileMenu()">Sign Up</button>
+                    </div>
+                    <div class="user-info" id="user-info" style="display: none;">
+                        <span id="user-welcome">Welcome, User!</span>
+                        <button class="btn btn-secondary" onclick="logout(); closeMobileMenu()">Logout</button>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Home Section -->
+        <section id="home-section" class="section active">
+            <div class="hero">
+                <h2>Welcome to Your Learning Journey!</h2>
+                <p>Discover amazing courses and track your progress</p>
+                <button class="btn btn-primary" onclick="showSection('courses')">Explore Courses</button>
+            </div>
+        </section>
+
+        <!-- Courses List Section -->
+        <section id="courses-section" class="section">
+            <h2>Available Courses</h2>
+            <div class="courses-grid" id="courses-grid">
+                <!-- Course cards will be populated by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Course Detail Section -->
+        <section id="course-detail-section" class="section">
+            <div class="course-detail" id="course-detail">
+                <!-- Course details will be populated by JavaScript -->
+            </div>
+        </section>
+
+        <!-- Profile Section -->
+        <section id="profile-section" class="section">
+            <h2>Your Learning Profile</h2>
+            <div class="profile-stats">
+                <div class="stat-card">
+                    <h3 id="completed-count">0</h3>
+                    <p>Courses Completed</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="total-courses">0</h3>
+                    <p>Total Courses</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="completion-rate">0%</h3>
+                    <p>Completion Rate</p>
+                </div>
+            </div>
+            <div class="completed-courses">
+                <h3>Completed Courses</h3>
+                <ul id="completed-courses-list">
+                    <!-- Completed courses will be listed here -->
+                </ul>
+            </div>
+        </section>
+    </main>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Login to EasyLearn</h2>
+                <span class="close" onclick="closeModal('login-modal')">&times;</span>
+            </div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="login-email">Email:</label>
+                    <input type="email" id="login-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password:</label>
+                    <input type="password" id="login-password" required>
+                </div>
+                <button type="submit" class="btn btn-primary full-width">Login</button>
+                <p class="auth-switch">
+                    Don't have an account? 
+                    <a href="#" onclick="switchToRegister()">Sign up here</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Registration Modal -->
+    <div id="register-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Join EasyLearn</h2>
+                <span class="close" onclick="closeModal('register-modal')">&times;</span>
+            </div>
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="register-name">Full Name:</label>
+                    <input type="text" id="register-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-email">Email:</label>
+                    <input type="email" id="register-email" required>
+                </div>
+                <div class="form-group">
+                    <label for="register-password">Password:</label>
+                    <input type="password" id="register-password" required minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="register-confirm">Confirm Password:</label>
+                    <input type="password" id="register-confirm" required>
+                </div>
+                <button type="submit" class="btn btn-primary full-width">Create Account</button>
+                <p class="auth-switch">
+                    Already have an account? 
+                    <a href="#" onclick="switchToLogin()">Login here</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Lesson Content Modal -->
+    <div id="lesson-modal" class="modal">
+        <div class="modal-content lesson-content">
+            <div class="modal-header">
+                <h2 id="lesson-title">Lesson Title</h2>
+                <span class="close" onclick="closeModal('lesson-modal')">&times;</span>
+            </div>
+            <div class="lesson-body">
+                <div class="lesson-navigation">
+                    <button class="btn btn-secondary" id="prev-lesson" onclick="navigateLesson(-1)">← Previous</button>
+                    <span id="lesson-progress">Lesson 1 of 6</span>
+                    <button class="btn btn-secondary" id="next-lesson" onclick="navigateLesson(1)">Next →</button>
+                </div>
+                <div id="lesson-content-area">
+                    <!-- Lesson content will be loaded here -->
+                </div>
+                <div class="lesson-actions">
+                    <button class="btn btn-success" onclick="markLessonComplete()">Mark Complete</button>
+                    <button class="btn btn-secondary" onclick="closeModal('lesson-modal')">Back to Course</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quiz Modal -->
+    <div id="quiz-modal" class="modal">
+        <div class="modal-content quiz-content">
+            <div class="modal-header">
+                <h2 id="quiz-title">Course Quiz</h2>
+                <span class="close" onclick="closeModal('quiz-modal')">&times;</span>
+            </div>
+            <div class="quiz-body">
+                <div class="quiz-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="quiz-progress-fill"></div>
+                    </div>
+                    <span id="quiz-progress-text">Question 1 of 10</span>
+                </div>
+                <div class="quiz-content-area">
+                    <div class="question-container">
+                        <h3 id="quiz-question">Question text will appear here</h3>
+                        <div class="quiz-options" id="quiz-options">
+                            <!-- Options will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+                <div class="quiz-navigation">
+                    <button class="btn btn-secondary" id="prev-question" onclick="navigateQuestion(-1)" disabled>← Previous</button>
+                    <button class="btn btn-primary" id="next-question" onclick="navigateQuestion(1)">Next →</button>
+                    <button class="btn btn-success" id="submit-quiz" onclick="submitQuiz()" style="display: none;">Submit Quiz</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Survey Modal -->
+    <div id="survey-modal" class="modal">
+        <div class="modal-content survey-content">
+            <div class="modal-header">
+                <h2 id="survey-title">Course Feedback</h2>
+                <span class="close" onclick="closeModal('survey-modal')">&times;</span>
+            </div>
+            <div class="survey-body">
+                <div class="survey-content-area">
+                    <div class="survey-question">
+                        <h3>How would you rate this course overall?</h3>
+                        <div class="rating-options">
+                            <input type="radio" name="rating" value="5" id="rating-5">
+                            <label for="rating-5">⭐⭐⭐⭐⭐ Excellent</label>
+                            <input type="radio" name="rating" value="4" id="rating-4">
+                            <label for="rating-4">⭐⭐⭐⭐ Good</label>
+                            <input type="radio" name="rating" value="3" id="rating-3">
+                            <label for="rating-3">⭐⭐⭐ Average</label>
+                            <input type="radio" name="rating" value="2" id="rating-2">
+                            <label for="rating-2">⭐⭐ Below Average</label>
+                            <input type="radio" name="rating" value="1" id="rating-1">
+                            <label for="rating-1">⭐ Poor</label>
+                        </div>
+                    </div>
+                    <div class="survey-question">
+                        <h3>What did you like most about this course?</h3>
+                        <textarea id="course-liked" placeholder="Share what you enjoyed about the course..."></textarea>
+                    </div>
+                    <div class="survey-question">
+                        <h3>What could be improved?</h3>
+                        <textarea id="course-improvement" placeholder="Share suggestions for improvement..."></textarea>
+                    </div>
+                    <div class="survey-question">
+                        <h3>Would you recommend this course to others?</h3>
+                        <div class="recommendation-options">
+                            <input type="radio" name="recommend" value="yes" id="recommend-yes">
+                            <label for="recommend-yes">👍 Yes, definitely</label>
+                            <input type="radio" name="recommend" value="maybe" id="recommend-maybe">
+                            <label for="recommend-maybe">🤔 Maybe</label>
+                            <input type="radio" name="recommend" value="no" id="recommend-no">
+                            <label for="recommend-no">👎 No</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="survey-actions">
+                    <button class="btn btn-success" onclick="submitSurvey()">Submit Feedback</button>
+                    <button class="btn btn-secondary" onclick="skipSurvey()">Skip Survey</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 EasyLearn. Built with ❤️ for learning.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
