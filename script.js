@@ -1,6 +1,17 @@
 // Global variables
 let currentUser = null;
 let isLessonViewer = false;
+let currentCourseId = null;
+let currentLessonId = null;
+let currentLessonIndex = 0;
+let courseLessons = [];
+
+// Quiz state variables
+let currentQuiz = null;
+let quizQuestions = [];
+let currentQuestionIndex = 0;
+let userAnswers = [];
+let quizScore = 0;
 
 async function loadCurrentUser() {
     const token = localStorage.getItem('authToken');
@@ -770,11 +781,11 @@ async function showCourseDetail(courseId) {
             <h3>Course Lessons</h3>
             ${course.lessons.map((lesson, index) => `
                 <div class="lesson-item">
-                    <div class="lesson-header" onclick="showLesson(${courseId}, ${index})">
+                    <div class="lesson-header" onclick="showLesson(${courseId}, ${lesson.id})">
                         <h4>${lesson.title}</h4>
                         <span class="lesson-toggle">▶</span>
                     </div>
-                    <p class="lesson-overview">${lesson.content.overview}</p>
+                    <p class="lesson-overview">${lesson.overview}</p>
                 </div>
             `).join('')}
         </div>
@@ -797,32 +808,268 @@ async function showCourseDetail(courseId) {
 }
 
 // Show lesson content in modal
-async function showLesson(courseId, lessonIndex) {
+async function showLesson(courseId, lessonId) {
     if (!currentUser) {
         showLoginModal();
         return;
     }
 
     try {
-        const course = coursesData.find(c => c.id === courseId);
-        if (!course || !course.lessons[lessonIndex]) {
+        // Update current lesson context
+        currentCourseId = courseId;
+        currentLessonId = lessonId;
+        
+        // Get course details to fetch all lessons
+        const courseResponse = await apiService.getCourseDetails(courseId);
+        courseLessons = courseResponse.course.lessons || [];
+        
+        // Find current lesson index
+        currentLessonIndex = courseLessons.findIndex(lesson => lesson.id == lessonId);
+        
+        // Fetch lesson content from API
+        const response = await apiService.getLessonContent(courseId, lessonId);
+        const lesson = response.lesson;
+        
+        if (!lesson) {
             showCompletionFeedback('Lesson not found.');
             return;
         }
         
-        const lesson = course.lessons[lessonIndex];
-        
+        // Update lesson content
         document.getElementById('lesson-title').textContent = lesson.title;
-        document.getElementById('lesson-content').innerHTML = lesson.content || lesson.overview;
+        document.getElementById('lesson-content-area').innerHTML = lesson.content || lesson.overview;
+        
+        // Update navigation state
+        updateLessonNavigation();
+        
+        // Show modal
         document.getElementById('lesson-modal').style.display = 'flex';
         
-        // Mark lesson as viewed/completed
-        if (lesson.id) {
-            await apiService.markLessonComplete(lesson.id);
-        }
+        // Mark lesson as viewed (don't mark as completed automatically)
+        // We'll handle completion when user clicks "Mark Complete"
+        console.log(`Viewing lesson: ${lesson.title}`);
     } catch (error) {
         console.error('Failed to load lesson:', error);
         showCompletionFeedback('Failed to load lesson content.');
+    }
+}
+
+// Update lesson navigation buttons and progress
+function updateLessonNavigation() {
+    const prevButton = document.getElementById('prev-lesson');
+    const nextButton = document.getElementById('next-lesson');
+    const lessonProgress = document.getElementById('lesson-progress');
+    const markCompleteBtn = document.querySelector('.lesson-actions .btn-success');
+    
+    if (!courseLessons || courseLessons.length === 0) {
+        if (prevButton) prevButton.disabled = true;
+        if (nextButton) nextButton.disabled = true;
+        if (lessonProgress) lessonProgress.textContent = 'Lesson 1 of 1';
+        return;
+    }
+    
+    const totalLessons = courseLessons.length;
+    const currentPosition = currentLessonIndex + 1;
+    
+    // Update progress text
+    if (lessonProgress) {
+        lessonProgress.textContent = `Lesson ${currentPosition} of ${totalLessons}`;
+    }
+    
+    // Update Previous button
+    if (prevButton) {
+        prevButton.disabled = currentLessonIndex <= 0;
+        prevButton.style.opacity = currentLessonIndex <= 0 ? '0.5' : '1';
+    }
+    
+    // Update Next button
+    if (nextButton) {
+        nextButton.disabled = currentLessonIndex >= totalLessons - 1;
+        nextButton.style.opacity = currentLessonIndex >= totalLessons - 1 ? '0.5' : '1';
+    }
+    
+    // Update mark complete button based on current lesson status
+    if (markCompleteBtn) {
+        const currentLesson = courseLessons[currentLessonIndex];
+        if (currentLesson && currentLesson.completed) {
+            markCompleteBtn.textContent = '✓ Completed';
+            markCompleteBtn.classList.add('completed');
+        } else {
+            markCompleteBtn.textContent = 'Mark Complete';
+            markCompleteBtn.classList.remove('completed');
+        }
+    }
+    
+    // Show/hide quiz button based on overall course completion
+    const allLessonsCompleted = courseLessons.every(lesson => lesson.completed);
+    if (allLessonsCompleted) {
+        showQuizButton();
+    } else {
+        hideQuizButton();
+    }
+}
+
+// Navigate to previous or next lesson
+function navigateLesson(direction) {
+    if (!courseLessons || courseLessons.length === 0) {
+        showCompletionFeedback('No lessons available for navigation.');
+        return;
+    }
+    
+    const newIndex = currentLessonIndex + direction;
+    
+    // Check bounds
+    if (newIndex < 0) {
+        showCompletionFeedback('This is the first lesson.');
+        return;
+    }
+    
+    if (newIndex >= courseLessons.length) {
+        showCompletionFeedback('This is the last lesson. Consider taking the quiz!');
+        return;
+    }
+    
+    // Navigate to the new lesson
+    const targetLesson = courseLessons[newIndex];
+    if (targetLesson) {
+        showLesson(currentCourseId, targetLesson.id);
+    }
+}
+
+// Mark current lesson as complete
+async function markLessonComplete() {
+    if (!currentUser) {
+        showLoginModal();
+        return;
+    }
+    
+    if (!currentLessonId) {
+        showCompletionFeedback('No lesson selected.');
+        return;
+    }
+    
+    try {
+        // Show loading state
+        const markCompleteBtn = document.querySelector('.lesson-actions .btn-success');
+        const originalText = markCompleteBtn.textContent;
+        markCompleteBtn.textContent = 'Completing...';
+        markCompleteBtn.disabled = true;
+        
+        // Call API to mark lesson complete
+        await apiService.markLessonComplete(currentLessonId);
+        
+        // Update local lesson data
+        if (courseLessons[currentLessonIndex]) {
+            courseLessons[currentLessonIndex].completed = true;
+        }
+        
+        // Update UI
+        markCompleteBtn.textContent = '✓ Completed';
+        markCompleteBtn.classList.add('completed');
+        markCompleteBtn.disabled = false;
+        
+        // Save course progress
+        await saveCourseProgress(currentCourseId, false, currentLessonId);
+        
+        // Show success feedback
+        showCompletionFeedback('Lesson marked as complete! 🎉');
+        
+        // Check if all lessons are completed to suggest quiz
+        const allLessonsCompleted = courseLessons.every(lesson => lesson.completed);
+        if (allLessonsCompleted) {
+            setTimeout(() => {
+                showCompletionFeedback('🎉 All lessons completed! Ready to take the course quiz?');
+                // Highlight the quiz button or show take quiz option
+                highlightQuizOption();
+            }, 2000);
+        }
+        
+    } catch (error) {
+        console.error('Failed to mark lesson complete:', error);
+        
+        // Restore button state
+        markCompleteBtn.textContent = originalText;
+        markCompleteBtn.disabled = false;
+        
+        showCompletionFeedback('Failed to mark lesson complete. Please try again.');
+    }
+}
+
+// Highlight quiz option when all lessons are completed
+function highlightQuizOption() {
+    // Show quiz button in lesson view
+    showQuizButton();
+    
+    // Also highlight in course modal if open
+    const courseModal = document.getElementById('course-modal');
+    const courseQuizButton = courseModal?.querySelector('.quiz-button, .btn-warning');
+    
+    if (courseQuizButton) {
+        courseQuizButton.style.animation = 'pulse 2s infinite';
+        courseQuizButton.style.boxShadow = '0 0 15px rgba(255, 193, 7, 0.5)';
+        
+        // Remove highlight after 5 seconds
+        setTimeout(() => {
+            courseQuizButton.style.animation = '';
+            courseQuizButton.style.boxShadow = '';
+        }, 5000);
+    }
+}
+
+// Enhanced lesson completion with better UX
+async function completeLessonAndProceed() {
+    await markLessonComplete();
+    
+    // Auto-navigate to next lesson if available
+    setTimeout(() => {
+        if (currentLessonIndex < courseLessons.length - 1) {
+            const nextLesson = courseLessons[currentLessonIndex + 1];
+            if (nextLesson) {
+                showLesson(currentCourseId, nextLesson.id);
+            }
+        } else {
+            // Last lesson completed, suggest quiz
+            closeModal('lesson-modal');
+            showCompletionFeedback('🎊 Course completed! Take the quiz to test your knowledge.');
+        }
+    }, 1500);
+}
+
+// Navigate to quiz from lesson view
+function goToQuiz() {
+    if (!currentCourseId) {
+        showCompletionFeedback('No course selected for quiz.');
+        return;
+    }
+    
+    // Close lesson modal first
+    closeModal('lesson-modal');
+    
+    // Small delay to ensure smooth transition
+    setTimeout(() => {
+        startQuiz(currentCourseId);
+    }, 300);
+}
+
+// Show quiz button when appropriate
+function showQuizButton() {
+    const quizButton = document.querySelector('.lesson-actions .quiz-button');
+    if (quizButton) {
+        quizButton.style.display = 'inline-block';
+        
+        // Add animation
+        setTimeout(() => {
+            quizButton.style.animation = 'pulse 2s infinite';
+        }, 500);
+    }
+}
+
+// Hide quiz button
+function hideQuizButton() {
+    const quizButton = document.querySelector('.lesson-actions .quiz-button');
+    if (quizButton) {
+        quizButton.style.display = 'none';
+        quizButton.style.animation = '';
     }
 }
 
@@ -1044,10 +1291,10 @@ function setupFormHandlers() {
 }
 
 // Quiz functionality
-let currentQuiz = null;
-let currentQuestionIndex = 0;
-let userAnswers = [];
-let quizScore = 0;
+// let currentQuiz = null; // Removed duplicate declaration
+// let currentQuestionIndex = 0; // Removed duplicate declaration
+// let userAnswers = []; // Removed duplicate declaration
+// let quizScore = 0; // Removed duplicate declaration
 
 // Start a quiz for a specific course
 function startQuiz(courseId) {
@@ -1420,7 +1667,7 @@ async function skipSurvey() {
     showCompletionFeedback('Course completed successfully!');
     
     // Mark course as completed
-    const course = coursesData.find(c => c.quiz === currentQuiz);
+    const course = coursesData.find(c => c.id === currentCourseId);
     if (course) {
         try {
             await saveCourseProgress(course.id, true);
@@ -1458,6 +1705,307 @@ async function resetAllCourses() {
     } catch (error) {
         console.error('Failed to reset course completions:', error);
         alert('Failed to reset course completions. Please try again.');
+    }
+}
+
+// ========================
+// QUIZ FUNCTIONALITY
+// ========================
+
+// Start quiz for a course
+async function startQuiz(courseId) {
+    try {
+        currentCourseId = courseId;
+        
+        // Load quiz questions for this course
+        const questions = await apiService.getQuizQuestions(courseId);
+        if (!questions || questions.length === 0) {
+            alert('No quiz questions available for this course.');
+            return;
+        }
+        
+        // Initialize quiz state
+        quizQuestions = questions;
+        currentQuestionIndex = 0;
+        userAnswers = new Array(questions.length).fill(null);
+        quizScore = 0;
+        
+        // Update quiz title
+        const course = coursesData.find(c => c.id === courseId);
+        const quizTitle = document.getElementById('quiz-title');
+        if (quizTitle && course) {
+            quizTitle.textContent = `${course.title} - Quiz`;
+        }
+        
+        // Show quiz modal and load first question
+        document.getElementById('quiz-modal').style.display = 'flex';
+        updateQuizDisplay();
+        
+    } catch (error) {
+        console.error('Failed to load quiz:', error);
+        alert('Failed to load quiz. Please try again.');
+    }
+}
+
+// Update quiz display for current question
+function updateQuizDisplay() {
+    if (!quizQuestions || quizQuestions.length === 0) {
+        return;
+    }
+    
+    const question = quizQuestions[currentQuestionIndex];
+    
+    // Update progress
+    updateQuizProgress();
+    
+    // Update question content
+    const questionElement = document.getElementById('quiz-question');
+    const optionsElement = document.getElementById('quiz-options');
+    
+    if (questionElement) {
+        questionElement.textContent = question.question;
+    }
+    
+    if (optionsElement) {
+        const options = [
+            { label: 'A', text: question.option_a },
+            { label: 'B', text: question.option_b },
+            { label: 'C', text: question.option_c },
+            { label: 'D', text: question.option_d }
+        ];
+        
+        optionsElement.innerHTML = options.map((option, index) => `
+            <div class="quiz-option" onclick="selectAnswer(${index})">
+                <input type="radio" name="quiz-answer" id="option-${index}" value="${index}" 
+                       ${userAnswers[currentQuestionIndex] === index ? 'checked' : ''}>
+                <label for="option-${index}">
+                    <span class="option-label">${option.label})</span>
+                    <span class="option-text">${option.text}</span>
+                </label>
+            </div>
+        `).join('');
+    }
+    
+    // Update navigation buttons
+    updateQuizNavigation();
+}
+
+// Update quiz progress display
+function updateQuizProgress() {
+    const progressText = document.getElementById('quiz-progress-text');
+    const progressFill = document.getElementById('quiz-progress-fill');
+    
+    if (progressText) {
+        progressText.textContent = `Question ${currentQuestionIndex + 1} of ${quizQuestions.length}`;
+    }
+    
+    if (progressFill) {
+        const progressPercent = ((currentQuestionIndex + 1) / quizQuestions.length) * 100;
+        progressFill.style.width = `${progressPercent}%`;
+    }
+}
+
+// Update quiz navigation buttons
+function updateQuizNavigation() {
+    const prevButton = document.getElementById('prev-question');
+    const nextButton = document.getElementById('next-question');
+    const submitButton = document.getElementById('submit-quiz');
+    
+    // Previous button
+    if (prevButton) {
+        prevButton.disabled = currentQuestionIndex === 0;
+    }
+    
+    // Next/Submit button logic
+    if (currentQuestionIndex === quizQuestions.length - 1) {
+        // Last question - show submit button
+        if (nextButton) nextButton.style.display = 'none';
+        if (submitButton) submitButton.style.display = 'inline-block';
+    } else {
+        // Not last question - show next button
+        if (nextButton) nextButton.style.display = 'inline-block';
+        if (submitButton) submitButton.style.display = 'none';
+    }
+}
+
+// Select an answer for current question
+function selectAnswer(answerIndex) {
+    userAnswers[currentQuestionIndex] = answerIndex;
+    
+    // Update radio button selection
+    const radioButton = document.getElementById(`option-${answerIndex}`);
+    if (radioButton) {
+        radioButton.checked = true;
+    }
+}
+
+// Navigate to previous/next question
+function navigateQuestion(direction) {
+    const newIndex = currentQuestionIndex + direction;
+    
+    // Validate bounds
+    if (newIndex < 0 || newIndex >= quizQuestions.length) {
+        return;
+    }
+    
+    // Update index and display
+    currentQuestionIndex = newIndex;
+    updateQuizDisplay();
+}
+
+// Submit quiz and calculate score
+async function submitQuiz() {
+    try {
+        // Check if all questions are answered
+        const unansweredCount = userAnswers.filter(answer => answer === null).length;
+        if (unansweredCount > 0) {
+            const confirm = window.confirm(`You have ${unansweredCount} unanswered questions. Submit anyway?`);
+            if (!confirm) {
+                return;
+            }
+        }
+        
+        // Calculate score
+        let correctAnswers = 0;
+        for (let i = 0; i < quizQuestions.length; i++) {
+            if (userAnswers[i] === quizQuestions[i].correct_answer) {
+                correctAnswers++;
+            }
+        }
+        
+        quizScore = Math.round((correctAnswers / quizQuestions.length) * 100);
+        
+        // Save quiz result
+        await apiService.saveQuizResult(currentCourseId, quizScore, userAnswers);
+        
+        // Show results
+        showQuizResults(correctAnswers, quizQuestions.length, quizScore);
+        
+    } catch (error) {
+        console.error('Failed to submit quiz:', error);
+        alert('Failed to submit quiz. Please try again.');
+    }
+}
+
+// Show quiz results
+function showQuizResults(correctAnswers, totalQuestions, score) {
+    const quizBody = document.querySelector('.quiz-body');
+    if (!quizBody) return;
+    
+    // Determine performance level
+    let performanceLevel = '';
+    let performanceMessage = '';
+    let performanceColor = '';
+    
+    if (score >= 80) {
+        performanceLevel = 'Excellent!';
+        performanceMessage = 'Outstanding work! You have mastered this material.';
+        performanceColor = '#28a745';
+    } else if (score >= 60) {
+        performanceLevel = 'Good Job!';
+        performanceMessage = 'Well done! You have a good understanding of the material.';
+        performanceColor = '#ffc107';
+    } else {
+        performanceLevel = 'Keep Learning!';
+        performanceMessage = 'Review the course materials and try again to improve your understanding.';
+        performanceColor = '#dc3545';
+    }
+    
+    quizBody.innerHTML = `
+        <div class="quiz-results">
+            <div class="results-header" style="color: ${performanceColor}">
+                <h3>${performanceLevel}</h3>
+                <div class="score-circle" style="border-color: ${performanceColor}">
+                    <span class="score-number" style="color: ${performanceColor}">${score}%</span>
+                </div>
+            </div>
+            
+            <div class="results-details">
+                <p class="performance-message">${performanceMessage}</p>
+                
+                <div class="results-stats">
+                    <div class="stat-item">
+                        <span class="stat-value">${correctAnswers}</span>
+                        <span class="stat-label">Correct Answers</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${totalQuestions - correctAnswers}</span>
+                        <span class="stat-label">Incorrect Answers</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${totalQuestions}</span>
+                        <span class="stat-label">Total Questions</span>
+                    </div>
+                </div>
+                
+                <div class="results-breakdown">
+                    <h4>Question Breakdown:</h4>
+                    <div class="questions-review">
+                        ${quizQuestions.map((question, index) => {
+                            const userAnswer = userAnswers[index];
+                            const isCorrect = userAnswer === question.correct_answer;
+                            const options = ['A', 'B', 'C', 'D'];
+                            
+                            return `
+                                <div class="question-review ${isCorrect ? 'correct' : 'incorrect'}">
+                                    <div class="question-number">${index + 1}.</div>
+                                    <div class="question-content">
+                                        <p class="question-text">${question.question}</p>
+                                        <p class="answer-info">
+                                            <span class="your-answer">Your answer: ${userAnswer !== null ? options[userAnswer] : 'No answer'}</span>
+                                            <span class="correct-answer">Correct answer: ${options[question.correct_answer]}</span>
+                                        </p>
+                                        ${question.explanation ? `<p class="explanation">${question.explanation}</p>` : ''}
+                                    </div>
+                                    <div class="result-icon">${isCorrect ? '✅' : '❌'}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="results-actions">
+                <button class="btn btn-primary" onclick="completeQuizAndCourse()">Continue</button>
+                <button class="btn btn-secondary" onclick="retakeQuiz()">Retake Quiz</button>
+                <button class="btn btn-secondary" onclick="closeModal('quiz-modal')">Back to Course</button>
+            </div>
+        </div>
+    `;
+}
+
+// Complete quiz and mark course as completed
+async function completeQuizAndCourse() {
+    try {
+        // Mark course as completed if score is 60% or higher
+        if (quizScore >= 60) {
+            const course = coursesData.find(c => c.id === currentCourseId);
+            if (course && !course.completed) {
+                await saveCourseProgress(currentCourseId, true);
+                course.completed = true;
+                showCompletionFeedback(`🎉 Course "${course.title}" completed successfully!`);
+            }
+        } else {
+            showCompletionFeedback('Quiz completed! Review the material and try again to complete the course.');
+        }
+        
+        // Close quiz modal
+        closeModal('quiz-modal');
+        
+        // Refresh course display
+        renderCourses();
+        renderProfile();
+        
+    } catch (error) {
+        console.error('Failed to save course completion:', error);
+        alert('Failed to save progress. Please try again.');
+    }
+}
+
+// Retake quiz
+function retakeQuiz() {
+    if (currentCourseId) {
+        startQuiz(currentCourseId);
     }
 }
 

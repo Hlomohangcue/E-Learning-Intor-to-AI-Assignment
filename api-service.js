@@ -111,7 +111,51 @@ class APIService {
         return await this.makeRequest(`/progress/user/${userId}`);
     }
 
+    // Generic progress methods expected by frontend
+    async getProgress() {
+        // Get current user's progress - extract userId from token or get from profile
+        try {
+            const profile = await this.getProfile();
+            return await this.getUserProgress(profile.user.id);
+        } catch (error) {
+            console.error('Error getting progress:', error);
+            return { progress: [] }; // Return empty progress as fallback
+        }
+    }
+
+    async saveProgress(progressData) {
+        // Save course or lesson progress
+        try {
+            const { courseId, lessonId, completed } = progressData;
+            
+            if (lessonId) {
+                // Save lesson progress
+                return await this.markLessonComplete(lessonId);
+            } else {
+                // Save course completion - we need to create this endpoint
+                return await this.makeRequest('/progress/course', {
+                    method: 'POST',
+                    body: JSON.stringify({ courseId, completed })
+                });
+            }
+        } catch (error) {
+            console.error('Error saving progress:', error);
+            throw error;
+        }
+    }
+
     // ===================== QUIZ API =====================
+
+    async getQuizQuestions(courseId) {
+        return await this.makeRequest(`/courses/${courseId}/quiz/questions`);
+    }
+
+    async saveQuizResult(courseId, score, answers) {
+        return await this.makeRequest(`/courses/${courseId}/quiz/submit`, {
+            method: 'POST',
+            body: JSON.stringify({ score, answers })
+        });
+    }
 
     async submitQuiz(courseId, answers) {
         return await this.makeRequest(`/courses/${courseId}/quiz/submit`, {

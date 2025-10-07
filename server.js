@@ -31,6 +31,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Database connection
 let db;
+let dbConnected = false;
+
 async function initDatabase() {
     try {
         db = await mysql.createConnection({
@@ -41,9 +43,12 @@ async function initDatabase() {
             port: process.env.DB_PORT
         });
         console.log('Connected to MySQL database');
+        dbConnected = true;
     } catch (error) {
         console.error('Database connection failed:', error);
-        process.exit(1);
+        console.log('Server will start without database connection. Please fix database connection and restart.');
+        dbConnected = false;
+        db = null;
     }
 }
 
@@ -65,6 +70,17 @@ const authenticateToken = (req, res, next) => {
     }
 };
 
+// Database connection middleware
+const checkDatabaseConnection = (req, res, next) => {
+    if (!dbConnected || !db) {
+        return res.status(503).json({ 
+            error: 'Database not available. Please check database connection and try again.',
+            details: 'MySQL service may not be running. Please start MySQL service and restart the server.'
+        });
+    }
+    next();
+};
+
 // Validation middleware
 const handleValidationErrors = (req, res, next) => {
     const errors = validationResult(req);
@@ -74,6 +90,17 @@ const handleValidationErrors = (req, res, next) => {
     next();
 };
 
+// ===================== API ROUTES =====================
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'Server is running',
+        database: dbConnected ? 'Connected' : 'Disconnected',
+        timestamp: new Date().toISOString()
+    });
+});
+
 // ===================== AUTHENTICATION ROUTES =====================
 
 // User Registration
@@ -81,7 +108,8 @@ app.post('/api/auth/register', [
     body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
-    handleValidationErrors
+    handleValidationErrors,
+    checkDatabaseConnection
 ], async (req, res) => {
     try {
         const { name, email, password } = req.body;
@@ -131,7 +159,8 @@ app.post('/api/auth/register', [
 app.post('/api/auth/login', [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
-    handleValidationErrors
+    handleValidationErrors,
+    checkDatabaseConnection
 ], async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -201,13 +230,13 @@ app.get('/api/auth/profile', authenticateToken, async (req, res) => {
 app.get('/api/courses', async (req, res) => {
     try {
         const [courses] = await db.execute(`
-            SELECT c.*, 
+            SELECT c.id, c.title, c.description, c.duration, c.level, c.created_at, c.updated_at,
                    COUNT(l.id) as lesson_count,
-                   CASE WHEN up.user_id IS NOT NULL THEN true ELSE false END as completed
+                   MAX(CASE WHEN up.user_id IS NOT NULL THEN 1 ELSE 0 END) as completed
             FROM courses c 
             LEFT JOIN lessons l ON c.id = l.course_id 
             LEFT JOIN user_progress up ON c.id = up.course_id AND up.user_id = ? AND up.completed = true
-            GROUP BY c.id 
+            GROUP BY c.id, c.title, c.description, c.duration, c.level, c.created_at, c.updated_at
             ORDER BY c.id
         `, [req.user?.id || 0]);
 
@@ -331,6 +360,84 @@ app.post('/api/progress/lesson/:lessonId/complete', authenticateToken, async (re
         res.json({ message: 'Lesson marked as complete' });
     } catch (error) {
         console.error('Progress error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Save Course Progress
+app.post('/api/progress/course', authenticateToken, [
+    body('courseId').isInt().withMessage('Course ID is required'),
+    body('completed').isBoolean().withMessage('Completed status is required'),
+    handleValidationErrors
+], async (req, res) => {
+    try {
+        const { courseId, completed } = req.body;
+
+        // Check if course exists
+        const [courses] = await db.execute(
+            'SELECT id FROM courses WHERE id = ?',
+            [courseId]
+        );
+
+        if (courses.length === 0) {
+            return res.status(404).json({ error: 'Course not found' });
+        }
+
+        // Check if course progress already exists
+        const [existing] = await db.execute(
+            'SELECT id FROM user_progress WHERE user_id = ? AND course_id = ? AND lesson_id IS NULL',
+            [req.user.id, courseId]
+        );
+
+        if (existing.length > 0) {
+            // Update existing course progress
+            await db.execute(
+                'UPDATE user_progress SET completed = ?, completed_at = ? WHERE id = ?',
+                [completed, completed ? new Date() : null, existing[0].id]
+            );
+        } else {
+            // Create new course progress record
+            await db.execute(
+                'INSERT INTO user_progress (user_id, course_id, lesson_id, completed, completed_at) VALUES (?, ?, NULL, ?, ?)',
+                [req.user.id, courseId, completed, completed ? new Date() : null]
+            );
+        }
+
+        res.json({ 
+            message: completed ? 'Course marked as complete' : 'Course progress saved',
+            courseId,
+            completed
+        });
+    } catch (error) {
+        console.error('Course progress error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Get Quiz Questions
+app.get('/api/courses/:courseId/quiz/questions', authenticateToken, async (req, res) => {
+    try {
+        const courseId = parseInt(req.params.courseId);
+
+        // Check if course exists
+        const [courses] = await db.execute(
+            'SELECT id FROM courses WHERE id = ?',
+            [courseId]
+        );
+
+        if (courses.length === 0) {
+            return res.status(404).json({ error: 'Course not found' });
+        }
+
+        // Get quiz questions for this course
+        const [questions] = await db.execute(
+            'SELECT id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, order_index FROM quiz_questions WHERE course_id = ? ORDER BY order_index',
+            [courseId]
+        );
+
+        res.json(questions);
+    } catch (error) {
+        console.error('Quiz questions error:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

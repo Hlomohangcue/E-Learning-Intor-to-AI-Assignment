@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EasyLearn - Mini E-Learning Platform</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="api-service.js"></script>
+    <script src="api-service.js?v=2"></script>
 </head>
 <body>
     <header>
@@ -166,6 +166,7 @@
                 </div>
                 <div class="lesson-actions">
                     <button class="btn btn-success" onclick="markLessonComplete()">Mark Complete</button>
+                    <button class="btn btn-warning quiz-button" onclick="goToQuiz()" style="display: none;">🎯 Take Quiz</button>
                     <button class="btn btn-secondary" onclick="closeModal('lesson-modal')">Back to Course</button>
                 </div>
             </div>
@@ -261,6 +262,6 @@
         </div>
     </footer>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=2"></script>
 </body>
 </html>
